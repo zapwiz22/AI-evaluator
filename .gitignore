@@ -9,3 +9,6 @@ __pycache__/
 *.log
 *.env
 backend/.env  
+node_modules/
+backend/__pycache__
+backend/node_modules/
