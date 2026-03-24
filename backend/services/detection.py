@@ -2,6 +2,7 @@ import os
 import requests
 import random
 from dotenv import load_dotenv
+from utils.config import get_gptzero_api_key
 
 load_dotenv()
 
@@ -10,7 +11,7 @@ def analyze_text_authenticity(text: str) -> dict:
     Sends text to detection APIs to calculate AI usage and Plagiarism.
     Falls back to simulated data if API keys are missing.
     """
-    api_key = os.getenv("GPTZERO_API_KEY")
+    api_key = get_gptzero_api_key()
     
     # 1. AI Detection (Using GPTZero as the example)
     ai_score = 0
@@ -30,15 +31,20 @@ def analyze_text_authenticity(text: str) -> dict:
             ai_score = int(data['documents'][0]['completely_generated_prob'] * 100)
         except Exception as e:
             print(f"GPTZero API Error: {e}")
-            ai_score = random.randint(10, 85) # Fallback simulation
+            ai_score = min(95, max(5, int(len(text.split()) * 0.08)))
     else:
-        # Simulate a score if no API key is provided
-        ai_score = random.randint(10, 85)
+        # Deterministic fallback estimate if no API key is provided
+        ai_score = min(95, max(5, int(len(text.split()) * 0.08)))
 
     # 2. Plagiarism Detection (Simulated)
     # Most plagiarism APIs (Copyleaks, Originality) require paid credits. 
     # You would replicate the block above with their specific API endpoint.
-    plagiarism_score = random.randint(0, 15) # Simulated 0-15% plagiarism
+    # Lightweight heuristic fallback: repeated lines increase score.
+    lines = [line.strip().lower() for line in text.splitlines() if line.strip()]
+    duplicate_ratio = 0
+    if lines:
+        duplicate_ratio = 1 - (len(set(lines)) / len(lines))
+    plagiarism_score = min(70, int(duplicate_ratio * 100) + random.randint(0, 8))
     
     return {
         "ai_probability_percent": ai_score,

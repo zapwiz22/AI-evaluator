@@ -1,13 +1,8 @@
 import React from 'react';
-import FileUpload from './components/FileUpload';
+import Dashboard from './pages/Dashboard';
 
 function App() {
-  return (
-    <div style={{ textAlign: 'center', marginTop: '50px', fontFamily: 'sans-serif' }}>
-      <h1>AI Evaluator Dashboard</h1>
-      <FileUpload />
-    </div>
-  );
+  return <Dashboard />;
 }
 
 export default App;

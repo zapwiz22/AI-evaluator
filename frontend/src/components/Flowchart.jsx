@@ -9,13 +9,14 @@ mermaid.initialize({
 
 const Flowchart = ({ chartCode }) => {
   const containerRef = useRef(null);
+  const renderIdRef = useRef(`mermaid-chart-${Math.random().toString(36).slice(2)}`);
 
   useEffect(() => {
     if (chartCode && containerRef.current) {
       // Clear previous chart
       containerRef.current.innerHTML = '';
       // Render new chart
-      mermaid.render('mermaid-chart', chartCode).then((result) => {
+      mermaid.render(renderIdRef.current, chartCode).then((result) => {
         containerRef.current.innerHTML = result.svg;
       }).catch(err => {
         console.error("Mermaid syntax error:", err);

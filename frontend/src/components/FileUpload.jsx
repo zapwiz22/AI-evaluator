@@ -3,6 +3,7 @@ import { uploadDocument } from '../services/api';
 import Flowchart from './Flowchart';
 import MetricsGauge from './MetricsGauge';
 import FactChecker from './FactChecker';
+import SummaryCard from './SummaryCard';
 
 const FileUpload = () => {
     const [file, setFile] = useState(null);
@@ -127,19 +128,7 @@ const FileUpload = () => {
 
                     {result.evaluation && (
                         <>
-                            <div style={{ background: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                <h3 style={{ marginTop: 0, borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Document Brief</h3>
-                                <p style={{ lineHeight: '1.6' }}>{result.evaluation.summary}</p>
-                            </div>
-
-                            <div style={{ background: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                                <h3 style={{ marginTop: 0, borderBottom: '1px solid #eee', paddingBottom: '10px' }}>Key Findings</h3>
-                                <ul style={{ lineHeight: '1.6', paddingLeft: '20px' }}>
-                                    {result.evaluation.key_findings.map((finding, index) => (
-                                        <li key={index} style={{ marginBottom: '8px' }}>{finding}</li>
-                                    ))}
-                                </ul>
-                            </div>
+                            <SummaryCard evaluation={result.evaluation} />
 
                             {result.evaluation.mermaid_flowchart && (
                                 <div style={{ background: '#ffffff', padding: '20px', borderRadius: '8px', border: '1px solid #dee2e6', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
