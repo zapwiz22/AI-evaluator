@@ -1,29 +1,59 @@
-import React, { useEffect, useRef } from 'react';
-import mermaid from 'mermaid';
+import React, { useEffect, useId, useRef } from "react";
+import mermaid from "mermaid";
 
 mermaid.initialize({
   startOnLoad: true,
-  theme: 'default',
-  securityLevel: 'loose',
+  theme: "default",
+  securityLevel: "loose",
 });
+
+const normalizeChartCode = (chartCode) => {
+  if (!chartCode) return "";
+
+  return chartCode
+    .replace(/^```(?:mermaid|json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+};
+
+const fallbackChartCode = [
+  "graph TD",
+  "  A[Document Uploaded] --> B[Text Extracted]",
+  "  B --> C[AI Analysis]",
+  "  C --> D[Review Complete]",
+].join("\n");
 
 const Flowchart = ({ chartCode }) => {
   const containerRef = useRef(null);
-  const renderIdRef = useRef(`mermaid-chart-${Math.random().toString(36).slice(2)}`);
+  const renderId = useId().replace(/:/g, "-");
 
   useEffect(() => {
     if (chartCode && containerRef.current) {
       // Clear previous chart
-      containerRef.current.innerHTML = '';
+      containerRef.current.innerHTML = "";
       // Render new chart
-      mermaid.render(renderIdRef.current, chartCode).then((result) => {
-        containerRef.current.innerHTML = result.svg;
-      }).catch(err => {
-        console.error("Mermaid syntax error:", err);
-        containerRef.current.innerHTML = '<p style="color:red;">Error rendering flowchart. AI generated invalid syntax.</p>';
-      });
+      const normalizedCode = normalizeChartCode(chartCode);
+
+      mermaid
+        .render(`mermaid-chart-${renderId}`, normalizedCode)
+        .then((result) => {
+          containerRef.current.innerHTML = result.svg;
+        })
+        .catch((err) => {
+          console.error("Mermaid syntax error:", err);
+          mermaid
+            .render(`mermaid-chart-${renderId}-fallback`, fallbackChartCode)
+            .then((result) => {
+              containerRef.current.innerHTML = result.svg;
+            })
+            .catch((fallbackErr) => {
+              console.error("Fallback Mermaid syntax error:", fallbackErr);
+              containerRef.current.innerHTML =
+                '<p style="color:red;">Error rendering flowchart.</p>';
+            });
+        });
     }
-  }, [chartCode]);
+  }, [chartCode, renderId]);
 
   return <div ref={containerRef} className="mermaid-container" />;
 };

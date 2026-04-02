@@ -19,7 +19,7 @@ const Dashboard = () => {
 				<FileUpload />
 			</section>
 
-			<section className="api-card">
+			{/* <section className="api-card">
 				<h2>Verification API</h2>
 				<p>
 					External clients can call <code>POST /api/verify-claims</code> with a list of claims.
@@ -33,7 +33,7 @@ const Dashboard = () => {
 	"search_context": "Optional external evidence text"
 }`}
 				</pre>
-			</section>
+			</section> */}
 		</main>
 	);
 };

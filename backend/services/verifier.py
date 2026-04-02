@@ -1,36 +1,21 @@
-import os
 import json
-import google.generativeai as genai
+import google.genai as genai
+from google.genai import types
 from utils.config import get_gemini_api_key
 
-
 MODEL_CANDIDATES = [
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-flash-latest",
-    "gemini-pro-latest",
+    "gemini-2.0-flash-lite",
 ]
-
-
-def _build_model() -> genai.GenerativeModel:
-    for name in MODEL_CANDIDATES:
-        try:
-            return genai.GenerativeModel(
-                name,
-                generation_config={"response_mime_type": "application/json"},
-            )
-        except Exception:
-            continue
-    return genai.GenerativeModel(
-        MODEL_CANDIDATES[0],
-        generation_config={"response_mime_type": "application/json"},
-    )
 
 
 def _fallback_claim_result(claim: str) -> dict:
     return {
         "claim": claim,
         "status": "Unverified",
-        "reason": "Automated verification unavailable because the LLM request failed (missing/invalid key, quota limit, or API error)."
+        "reason": "Automated verification unavailable because the LLM request failed (missing/invalid key, quota limit, or API error).",
+        "source_context": "No online source summary available."
     }
 
 
@@ -48,8 +33,7 @@ def verify_single_claim(claim: str, search_context: str = "") -> dict:
     if not api_key:
         return _fallback_claim_result(claim)
 
-    genai.configure(api_key=api_key)
-    model = _build_model()
+    client = genai.Client(api_key=api_key)
 
     prompt = f"""
     Evaluate the factual claim using the available context.
@@ -65,16 +49,44 @@ def verify_single_claim(claim: str, search_context: str = "") -> dict:
     """
 
     try:
-        response = model.generate_content(prompt)
+        response = None
+        for model_name in MODEL_CANDIDATES:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                    ),
+                )
+                break
+            except Exception:
+                continue
+
+        if response is None:
+            raise RuntimeError("No supported Gemini model responded successfully.")
+
         parsed = json.loads(response.text)
         return {
             "claim": claim,
             "status": _normalize_status(parsed.get("status", "Unverified")),
-            "reason": parsed.get("reason", "Evaluation unclear.")
+            "reason": parsed.get("reason", "Evaluation unclear."),
+            "source_context": search_context if search_context else "No external web evidence was provided."
         }
     except Exception as e:
         print(f"Verify claim error: {e}")
-        return _fallback_claim_result(claim)
+        fallback = _fallback_claim_result(claim)
+        fallback["source_context"] = search_context if search_context else fallback["source_context"]
+        return fallback
+
+
+def _fallback_claim_extraction(text: str) -> list[str]:
+    sentences = [
+        s.strip()
+        for s in text.replace("\n", " ").split(".")
+        if len(s.split()) >= 7
+    ]
+    return sentences[:3]
 
 def verify_document_claims(text: str) -> list:
     """Extracts claims from text, 'searches' the web, and verifies them."""
@@ -82,9 +94,7 @@ def verify_document_claims(text: str) -> list:
     if not api_key:
         return []
 
-    genai.configure(api_key=api_key)
-    
-    model = _build_model()
+    client = genai.Client(api_key=api_key)
     
     # 1. EXTRACTION: Get 3 verifiable claims
     extract_prompt = f"""
@@ -96,7 +106,23 @@ def verify_document_claims(text: str) -> list:
     """
     
     try:
-        response = model.generate_content(extract_prompt)
+        response = None
+        for model_name in MODEL_CANDIDATES:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=extract_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                    ),
+                )
+                break
+            except Exception:
+                continue
+
+        if response is None:
+            raise RuntimeError("No supported Gemini model responded successfully.")
+
         claims = json.loads(response.text)
         # Ensure it's a list even if the LLM wraps it in a dict
         if isinstance(claims, dict):
@@ -104,7 +130,20 @@ def verify_document_claims(text: str) -> list:
         claims = claims[:3] # Limit to 3 for performance
     except Exception as e:
         print(f"Extraction Error: {e}")
-        return []
+        claims = _fallback_claim_extraction(text)
+
+    if not claims:
+        claims = _fallback_claim_extraction(text)
+
+    if not claims:
+        return [
+            {
+                "claim": "No explicit factual claims could be extracted from the uploaded text.",
+                "status": "Unverified",
+                "reason": "Try uploading a report with clear factual statements, metrics, or outcomes.",
+                "source_context": "No online source summary available.",
+            }
+        ]
 
     # 2 & 3. SEARCH AND VERIFY
     verification_results = []

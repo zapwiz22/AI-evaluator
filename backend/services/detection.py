@@ -1,51 +1,98 @@
 import os
-import requests
 import random
 from dotenv import load_dotenv
-from utils.config import get_gptzero_api_key
+from transformers import pipeline
+
+try:
+    from ddgs import DDGS
+except ImportError:
+    from duckduckgo_search import DDGS
 
 load_dotenv()
 
+# ==========================================
+# 1. Initialize Open-Source AI Detector
+# ==========================================
+# We load this globally so it only initializes once when the server starts.
+# Note: The first time you run this, it will download the model (~500MB).
+print("Loading AI Detection Model (this may take a moment on first run)...")
+try:
+    ai_detector = pipeline("text-classification", model="Hello-SimpleAI/chatgpt-detector-roberta")
+    print("AI Model loaded successfully!")
+except Exception as e:
+    print(f"Failed to load AI model: {e}")
+    ai_detector = None
+
+
 def analyze_text_authenticity(text: str) -> dict:
     """
-    Sends text to detection APIs to calculate AI usage and Plagiarism.
-    Falls back to simulated data if API keys are missing.
+    Analyzes text for AI generation using a local Hugging Face model
+    and checks for plagiarism using DuckDuckGo web search.
     """
-    api_key = get_gptzero_api_key()
     
-    # 1. AI Detection (Using GPTZero as the example)
+    # ---------------------------------------------------------
+    # A. AI Content Detection (Hugging Face RoBERTa)
+    # ---------------------------------------------------------
     ai_score = 0
-    if api_key and api_key != "your_gptzero_key_here":
+    if ai_detector and text.strip():
         try:
-            url = "https://api.gptzero.me/v2/predict/text"
-            headers = {
-                "x-api-key": api_key,
-                "Content-Type": "application/json"
-            }
-            payload = {"document": text}
-            response = requests.post(url, headers=headers, json=payload)
-            response.raise_for_status()
+            # Let the tokenizer handle truncation to avoid index overflow.
+            truncated_text = text
             
-            data = response.json()
-            # GPTZero returns a probability between 0 and 1. We convert to a percentage.
-            ai_score = int(data['documents'][0]['completely_generated_prob'] * 100)
+            # Run the model
+            result = ai_detector(truncated_text, truncation=True, max_length=512)[0]
+            
+            # The model usually outputs labels like 'ChatGPT' or 'Human'
+            if result['label'].lower() == 'chatgpt':
+                ai_score = int(result['score'] * 100)
+            else:
+                ai_score = 100 - int(result['score'] * 100)
+                
         except Exception as e:
-            print(f"GPTZero API Error: {e}")
+            print(f"AI Detection Error: {e}")
+            # Deterministic fallback if the model crashes
             ai_score = min(95, max(5, int(len(text.split()) * 0.08)))
     else:
-        # Deterministic fallback estimate if no API key is provided
         ai_score = min(95, max(5, int(len(text.split()) * 0.08)))
 
-    # 2. Plagiarism Detection (Simulated)
-    # Most plagiarism APIs (Copyleaks, Originality) require paid credits. 
-    # You would replicate the block above with their specific API endpoint.
-    # Lightweight heuristic fallback: repeated lines increase score.
-    lines = [line.strip().lower() for line in text.splitlines() if line.strip()]
-    duplicate_ratio = 0
-    if lines:
-        duplicate_ratio = 1 - (len(set(lines)) / len(lines))
-    plagiarism_score = min(70, int(duplicate_ratio * 100) + random.randint(0, 8))
+
+    # ---------------------------------------------------------
+    # B. Plagiarism Detection (DuckDuckGo Web Search)
+    # ---------------------------------------------------------
+    plagiarism_score = 0
     
+    # 1. Clean and split text into meaningful sentences
+    # We filter out very short sentences (less than 7 words) to avoid false positives 
+    # on common phrases like "Thank you for reading."
+    sentences = [s.strip() for s in text.replace('\n', '. ').split('.') if len(s.split()) > 7]
+    
+    if sentences:
+        # 2. Pick up to 5 random, substantial sentences to verify
+        # We limit to 5 to avoid triggering DDG rate limits and keep the API fast
+        sample_size = min(5, len(sentences))
+        samples_to_check = random.sample(sentences, sample_size)
+        
+        plagiarized_hits = 0
+        ddgs = DDGS()
+
+        # 3. Search the web for exact string matches
+        for sentence in samples_to_check:
+            try:
+                # Enclose in quotes for exact match searching
+                query = f'"{sentence}"'
+                
+                # Fetch top 2 results
+                results = list(ddgs.text(query, max_results=2)) 
+                
+                if len(results) > 0:
+                    plagiarized_hits += 1
+            except Exception as e:
+                print(f"DDG Search error for sentence '{sentence[:20]}...': {e}")
+                continue
+
+        # 4. Calculate percentage based on how many sentences were found online
+        plagiarism_score = int((plagiarized_hits / sample_size) * 100)
+
     return {
         "ai_probability_percent": ai_score,
         "plagiarism_percent": plagiarism_score
